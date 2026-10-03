@@ -19,19 +19,19 @@
 
 ## Скриншоты
 
-**Витрина: лента изменений цен и остатков в реальном времени (SSE)**
+**Витрина: лента изменений цен**
 
 ![Витрина с лентой изменений](docs/screenshots/catalog2.png)
 
-**Витрина: каталог товаров с фото из image-service**
+**Витрина: каталог товаров**
 
 ![Каталог товаров](docs/screenshots/catalog.png)
 
-**Админ-панель: управление товарами**
+**Админ-панель**
 
 ![Админ-панель](docs/screenshots/admin.png)
 
-**Вход и регистрация, в том числе через Яндекс ID**
+**Вход и регистрация**
 
 ![Страница входа](docs/screenshots/auth.png)
 
@@ -39,14 +39,11 @@
 
 | Область | Технологии |
 |---|---|
-| Бэкенд | Go 1.27, `net/http` (стандартный роутер), gRPC + Protocol Buffers (`buf`) |
-| Данные | PostgreSQL 16, sqlc (код из SQL-запросов), goose (миграции), pgx |
-| Сообщения и кэш | Apache Kafka 4 (режим KRaft, без ZooKeeper), Redis 7 |
-| Авторизация | JWT (HS256), bcrypt, OAuth 2.0 + PKCE (Яндекс ID) |
-| Фронтенд | HTML, CSS и JavaScript без фреймворков, nginx, Swagger UI |
+| Бэкенд | Go 1.27, `net/http`, gRPC + Protocol Buffers (`buf`) |
+| Данные | PostgreSQL 16, sqlc, goose, pgx |
+| Сообщения и кэш | Apache Kafka 4, Redis 7 |
+| Авторизация | JWT, bcrypt, OAuth 2.0 + PKCE (Яндекс ID) |
 | Инфраструктура | Docker, Docker Compose |
-| Качество | `go test`, golangci-lint, `go vet`, gofmt, pre-push хук |
-| Документация | OpenAPI 3, PlantUML |
 
 ## Архитектура
 
@@ -54,7 +51,7 @@
 
 | Сервис | Что делает | Хранилище | Протокол |
 |---|---|---|---|
-| `api-service` | REST API магазина (клиенты, поставщики, товары, фото, авторизация), поток SSE, приём событий из Kafka | Postgres `shop_api`, Redis | HTTP |
+| `api-service` | REST API магазина, поток SSE, приём событий из Kafka | Postgres `shop_api`, Redis | HTTP |
 | `auth-service` | учётные записи, вход по паролю и через Яндекс, сессии, access- и refresh-токены | Postgres `shop_auth` | только gRPC |
 | `image-service` | хранение фото товаров в четырёх базах-шардах | Postgres `shop_images_1..4` | только gRPC |
 | `generator-service` | раз в 2 с меняет цену и остаток случайного товара и публикует событие в Kafka | — | Kafka, HTTP |
@@ -72,15 +69,6 @@
   api-service читает его, обновляет товар в базе и рассылает обновление
   всем открытым витринам по SSE.
 
-У каждого сервиса своя база. Другие сервисы её не читают и обращаются к
-владельцу данных через его API.
-
-Все Go-сервисы построены по Clean Architecture: `transport` → `usecase` → `domain`,
-а репозитории и клиенты реализуют интерфейсы, которые объявлены там, где они
-используются. Бизнес-правила живут только в `usecase`.
-
-Подробнее — в [docs/architecture.md](docs/architecture.md).
-
 ## Документация
 
 | Документ | Что внутри |
@@ -95,24 +83,27 @@
 
 Схемы баз данных:
 
-| shop_api | shop_auth | shop_images_1..4 |
-|---|---|---|
-| ![Схема базы shop_api](docs/images/db-api-service.png) | ![Схема базы shop_auth](docs/images/db-auth-service.png) | ![Схема баз image-service](docs/images/db-image-service.png) |
+**shop_api**
+
+![Схема базы shop_api](docs/images/db-api-service.png)
+
+**shop_auth**
+
+![Схема базы shop_auth](docs/images/db-auth-service.png)
+
+**shop_images**
+
+![Схема баз image-service](docs/images/db-image-service.png)
 
 ## Запуск
 
-Нужен только Docker с Docker Compose. Все команды выполняются из каталога `src`.
+Для запуска нужен Docker.
 
 ```bash
 make up
 ```
 
-`make up` создаёт `.env` из `.env.example`, если его ещё нет, и собирает
-образы. Затем он применяет миграции всех баз (включая четыре шарда фото),
-создаёт топик Kafka и запускает весь стек. Порядок запуска задают
-healthcheck-и и `depends_on`, поэтому отдельных шагов не нужно.
-
-| Адрес | Что там |
+| Адрес | Что находится |
 |---|---|
 | http://localhost:3000 | витрина |
 | http://localhost:3000/admin/products.html | админ-панель |
