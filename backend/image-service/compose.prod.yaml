@@ -1,0 +1,61 @@
+services:
+  # Один сервер Postgres с четырьмя базами-шардами (см. initdb/create-shards.sql).
+  image-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: "${IMAGE_DB_USER:?IMAGE_DB_USER обязателен}"
+      POSTGRES_PASSWORD: "${IMAGE_DB_PASSWORD:?IMAGE_DB_PASSWORD обязателен}"
+    volumes:
+      - image_postgres_data:/var/lib/postgresql/data
+      - ./backend/image-service/initdb:/docker-entrypoint-initdb.d:ro
+    # Проверка по TCP: пока entrypoint выполняет initdb-скрипты, сервер слушает
+    # только unix-сокет, и мигратор не должен стартовать раньше создания шардов.
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d shop_images_4" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  image-migrate:
+    build:
+      context: ./backend
+      dockerfile: image-service/Dockerfile
+      target: migrator
+    environment:
+      DB_SHARD_1_URL: &shard1 "postgres://${IMAGE_DB_USER:?IMAGE_DB_USER обязателен}:${IMAGE_DB_PASSWORD:?IMAGE_DB_PASSWORD обязателен}@image-db:5432/shop_images_1?sslmode=${IMAGE_DB_SSL_MODE:-disable}"
+      DB_SHARD_2_URL: &shard2 "postgres://${IMAGE_DB_USER:?IMAGE_DB_USER обязателен}:${IMAGE_DB_PASSWORD:?IMAGE_DB_PASSWORD обязателен}@image-db:5432/shop_images_2?sslmode=${IMAGE_DB_SSL_MODE:-disable}"
+      DB_SHARD_3_URL: &shard3 "postgres://${IMAGE_DB_USER:?IMAGE_DB_USER обязателен}:${IMAGE_DB_PASSWORD:?IMAGE_DB_PASSWORD обязателен}@image-db:5432/shop_images_3?sslmode=${IMAGE_DB_SSL_MODE:-disable}"
+      DB_SHARD_4_URL: &shard4 "postgres://${IMAGE_DB_USER:?IMAGE_DB_USER обязателен}:${IMAGE_DB_PASSWORD:?IMAGE_DB_PASSWORD обязателен}@image-db:5432/shop_images_4?sslmode=${IMAGE_DB_SSL_MODE:-disable}"
+      DB_MIGRATIONS_DIR: /app/migrations
+    depends_on:
+      image-db:
+        condition: service_healthy
+    restart: "no"
+
+  image:
+    build:
+      context: ./backend
+      dockerfile: image-service/Dockerfile
+      target: runtime
+    environment:
+      ENV: "${ENV:-prod}"
+      GRPC_PORT: "${IMAGE_GRPC_PORT:-50052}"
+      GRPC_MAX_MESSAGE_BYTES: "${IMAGE_GRPC_MAX_MESSAGE_BYTES:-26214400}"
+      DB_SHARD_1_URL: *shard1
+      DB_SHARD_2_URL: *shard2
+      DB_SHARD_3_URL: *shard3
+      DB_SHARD_4_URL: *shard4
+    depends_on:
+      image-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "nc -w 1 127.0.0.1 $$GRPC_PORT < /dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: always
+
+volumes:
+  image_postgres_data:

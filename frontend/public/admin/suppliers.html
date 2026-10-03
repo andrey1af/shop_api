@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Админ-панель — поставщики</title>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+<div class="page" style="min-height:100vh;">
+<header class="admin-header">
+  <div class="admin-header-top">
+    <div class="admin-brand"><span class="brand"><img class="brand-logo" src="/assets/img/logo.png" alt="" width="32" height="32">SHOP</span><span class="admin-brand-tag mono">admin</span></div>
+    <nav class="admin-nav" aria-label="Разделы админ-панели">
+      <a href="/admin/products.html">Товары</a>
+      <a href="/admin/clients.html">Клиенты</a>
+      <a href="/admin/suppliers.html" class="active">Поставщики</a>
+    </nav>
+    <div class="admin-header-right">
+      <a href="/" class="chip-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"></path></svg>Открыть витрину</a>
+    </div>
+  </div>
+  <div class="admin-title-row"><h1>Поставщики</h1></div>
+</header>
+
+<main class="admin-main">
+  <div class="table-toolbar">
+    <span class="catalog-count" id="supplier-count">Загрузка…</span>
+    <button type="button" class="btn btn-primary" id="add-supplier-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Добавить поставщика</button>
+  </div>
+
+  <div id="conflict-alert" class="alert" hidden>
+    <div class="alert-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C0271B" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6M12 16.5v.5"></path></svg></div>
+    <div class="alert-body">
+      <span class="alert-title" id="conflict-title"></span>
+      <span class="alert-text">К поставщику привязаны товары. Сначала удалите их, затем повторите.</span>
+    </div>
+    <a href="/admin/products.html" class="btn btn-secondary" id="conflict-link" style="height:44px;white-space:nowrap;">Показать товары</a>
+    <button type="button" class="alert-close" id="conflict-close" aria-label="Скрыть уведомление"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B6272" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+  </div>
+
+  <div class="supplier-grid" id="supplier-grid"></div>
+</main>
+</div>
+
+<script src="/assets/js/util.js"></script>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/modal.js"></script>
+<script src="/assets/js/auth.js"></script>
+<script src="/assets/js/admin/suppliers.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: backend/gen
+    opt: module=github.com/andrey1af/shop-api/backend/gen
+  - local: protoc-gen-go-grpc
+    out: backend/gen
+    opt: module=github.com/andrey1af/shop-api/backend/gen

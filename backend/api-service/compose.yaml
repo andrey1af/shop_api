@@ -1,0 +1,88 @@
+services:
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: "${DB_NAME:-shop_api}"
+      POSTGRES_USER: "${DB_USER:-postgres}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-postgres}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: api-service/Dockerfile
+      target: migrator
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: "${DB_NAME:-shop_api}"
+      DB_USER: "${DB_USER:-postgres}"
+      DB_PASSWORD: "${DB_PASSWORD:-postgres}"
+      DB_SSL_MODE: "${DB_SSL_MODE:-disable}"
+      DB_MIGRATIONS_DIR: /app/migrations
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: api-service/Dockerfile
+      target: runtime
+    environment:
+      HTTP_PORT: "${HTTP_PORT:-8090}"
+      HTTP_READ_HEADER_TIMEOUT: "${HTTP_READ_HEADER_TIMEOUT:-5s}"
+      HTTP_SHUTDOWN_TIMEOUT: "${HTTP_SHUTDOWN_TIMEOUT:-10s}"
+      HTTP_HEALTH_TIMEOUT: "${HTTP_HEALTH_TIMEOUT:-2s}"
+      HTTP_AUTH_RATE_LIMIT_PER_MINUTE: "${HTTP_AUTH_RATE_LIMIT_PER_MINUTE:-10}"
+      HTTP_AUTH_RATE_LIMIT_BURST: "${HTTP_AUTH_RATE_LIMIT_BURST:-5}"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: "${DB_NAME:-shop_api}"
+      DB_USER: "${DB_USER:-postgres}"
+      DB_PASSWORD: "${DB_PASSWORD:-postgres}"
+      DB_SSL_MODE: "${DB_SSL_MODE:-disable}"
+      AUTH_GRPC_ADDR: "auth:${GRPC_PORT:-50051}"
+      AUTH_GRPC_TIMEOUT: "${AUTH_GRPC_TIMEOUT:-5s}"
+      IMAGE_GRPC_ADDR: "image:${IMAGE_GRPC_PORT:-50052}"
+      IMAGE_GRPC_TIMEOUT: "${IMAGE_GRPC_TIMEOUT:-5s}"
+      IMAGE_GRPC_MAX_MESSAGE_BYTES: "${IMAGE_GRPC_MAX_MESSAGE_BYTES:-26214400}"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_PRODUCT_UPDATES_TOPIC: "${KAFKA_PRODUCT_UPDATES_TOPIC:-product.updates}"
+      KAFKA_CONSUMER_GROUP_ID: "${KAFKA_CONSUMER_GROUP_ID:-api-service}"
+      REDIS_ADDR: "redis:6379"
+      REDIS_IMAGE_TTL: "${REDIS_IMAGE_TTL:-1h}"
+      REDIS_IMAGE_MAX_BYTES: "${REDIS_IMAGE_MAX_BYTES:-5242880}"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      image:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8090:${HTTP_PORT:-8090}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:$$HTTP_PORT/health/live"]
+      interval: 10s
+      timeout: ${HTTP_HEALTH_TIMEOUT:-2s}
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

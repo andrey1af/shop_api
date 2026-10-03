@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Админ-панель — товары</title>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+<div class="page" style="min-height:100vh;">
+<header class="admin-header">
+  <div class="admin-header-top">
+    <div class="admin-brand"><span class="brand"><img class="brand-logo" src="/assets/img/logo.png" alt="" width="32" height="32">SHOP</span><span class="admin-brand-tag mono">admin</span></div>
+    <nav class="admin-nav" aria-label="Разделы админ-панели">
+      <a href="/admin/products.html" class="active">Товары</a>
+      <a href="/admin/clients.html">Клиенты</a>
+      <a href="/admin/suppliers.html">Поставщики</a>
+    </nav>
+    <div class="admin-header-right">
+      <a href="/" class="chip-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"></path></svg>Открыть витрину</a>
+    </div>
+  </div>
+  <div class="admin-title-row"><h1>Товары</h1></div>
+</header>
+
+<main class="admin-main">
+  <div class="table-toolbar">
+    <div class="table-toolbar-left">
+      <label class="search-box">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B6272" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+        <input type="search" id="filter-search" aria-label="Фильтр по названию" placeholder="Фильтр по названию">
+      </label>
+      <select class="bare" id="filter-category" aria-label="Категория"><option value="">Все категории</option></select>
+      <select class="bare" id="filter-supplier" aria-label="Поставщик"><option value="">Все поставщики</option></select>
+      <span class="table-toolbar-note">Показаны товары с остатком больше нуля</span>
+    </div>
+    <a href="/admin/product-new.html" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Добавить товар</a>
+  </div>
+
+  <div class="table-card">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Товар</th>
+          <th>Категория</th>
+          <th class="num">Цена</th>
+          <th class="num">Остаток</th>
+          <th>Поставщик</th>
+          <th>Обновлён</th>
+          <th class="num">Действия</th>
+        </tr>
+      </thead>
+      <tbody id="products-tbody">
+        <tr><td colspan="7" style="padding:32px 24px;color:var(--muted);">Загрузка…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+</div>
+
+<script src="/assets/js/util.js"></script>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/modal.js"></script>
+<script src="/assets/js/auth.js"></script>
+<script src="/assets/js/admin/products.js"></script>
+</body>
+</html>

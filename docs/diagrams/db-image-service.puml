@@ -1,0 +1,30 @@
+@startuml db-image-service
+title image-service — базы shop_images_1..4
+
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #5B4BE8
+  HeaderBackgroundColor #F3F1FF
+}
+hide circle
+hide methods
+
+entity "images" as images {
+  * id : uuid <<PK>>
+  --
+  * data : bytea
+  * content_type : text
+  * created_at : timestamptz
+  * updated_at : timestamptz
+}
+
+note right of images
+  Одинаковая таблица в каждой из 4 баз.
+  База выбирается по первому символу id:
+  0-3 → shop_images_1, 4-7 → shop_images_2,
+  8-b → shop_images_3, c-f → shop_images_4.
+end note
+@enduml

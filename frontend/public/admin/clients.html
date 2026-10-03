@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Админ-панель — клиенты</title>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+<div class="page" style="min-height:100vh;">
+<header class="admin-header">
+  <div class="admin-header-top">
+    <div class="admin-brand"><span class="brand"><img class="brand-logo" src="/assets/img/logo.png" alt="" width="32" height="32">SHOP</span><span class="admin-brand-tag mono">admin</span></div>
+    <nav class="admin-nav" aria-label="Разделы админ-панели">
+      <a href="/admin/products.html">Товары</a>
+      <a href="/admin/clients.html" class="active">Клиенты</a>
+      <a href="/admin/suppliers.html">Поставщики</a>
+    </nav>
+    <div class="admin-header-right">
+      <a href="/" class="chip-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"></path></svg>Открыть витрину</a>
+    </div>
+  </div>
+  <div class="admin-title-row"><h1>Клиенты</h1></div>
+</header>
+
+<main class="admin-main">
+  <div class="table-toolbar" style="align-items:flex-end;">
+    <form class="client-search-form" id="search-form">
+      <label class="field">Имя
+        <input type="text" id="search-name" placeholder="Иван">
+      </label>
+      <label class="field">Фамилия
+        <input type="text" id="search-surname" placeholder="Иванов">
+      </label>
+      <button type="submit" class="btn" style="background:var(--ink);color:#fff;">Найти</button>
+      <button type="button" class="btn btn-secondary" id="search-reset" hidden>Сбросить</button>
+      <span class="hint">Точное совпадение имени и фамилии</span>
+    </form>
+    <button type="button" class="btn btn-primary" id="add-client-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Добавить клиента</button>
+  </div>
+
+  <div class="table-card">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Клиент</th>
+          <th>Пол</th>
+          <th>Дата рождения</th>
+          <th>Адрес</th>
+          <th>Регистрация</th>
+          <th class="num">Действия</th>
+        </tr>
+      </thead>
+      <tbody id="clients-tbody">
+        <tr><td colspan="6" style="padding:32px 24px;color:var(--muted);">Загрузка…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination" id="pagination-row">
+    <label class="per-page-label">Показывать по
+      <select id="page-size">
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+    </label>
+    <div class="pagination-controls">
+      <button type="button" id="page-prev">Назад</button>
+      <span id="page-indicator">Страница 1</span>
+      <button type="button" id="page-next">Вперёд</button>
+    </div>
+  </div>
+</main>
+</div>
+
+<script src="/assets/js/util.js"></script>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/modal.js"></script>
+<script src="/assets/js/auth.js"></script>
+<script src="/assets/js/admin/clients.js"></script>
+</body>
+</html>

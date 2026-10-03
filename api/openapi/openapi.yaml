@@ -1,0 +1,914 @@
+openapi: 3.1.0
+info:
+  title: Shop API
+  version: 1.0.0
+  description: |
+    REST API интернет-магазина бытовой техники.
+
+    Авторизация: `POST /api/v1/auth/login` возвращает access-токен (JWT, 15 минут)
+    и refresh-токен (30 дней, одноразовый). Access-токен передаётся в заголовке
+    `Authorization: Bearer <token>`. Браузер получает refresh-токен в cookie
+    `refresh_token` (HttpOnly, SameSite=Strict, Path=/api/v1/auth), остальные
+    клиенты — в теле ответа.
+
+    Регистрация, вход и сброс пароля ограничены по частоте: по умолчанию
+    10 запросов в минуту с одного IP (запас — 5 запросов подряд), сверх лимита — 429.
+servers:
+  - url: /
+    description: Текущий хост (через nginx фронтенда — http://localhost:3000)
+  - url: http://localhost:8090
+    description: api-service напрямую
+tags:
+  - name: auth
+    description: Регистрация, вход, сессии и токены
+  - name: clients
+    description: Покупатели
+  - name: suppliers
+    description: Поставщики
+  - name: products
+    description: Каталог товаров
+  - name: images
+    description: Фото товаров (image-service с шардированием, кэш в Redis)
+  - name: realtime
+    description: Изменения товаров в реальном времени
+  - name: health
+    description: Проверки состояния
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      tags: [health]
+      summary: Процесс жив
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+  /health/ready:
+    get:
+      operationId: getReadiness
+      tags: [health]
+      summary: Готовность к работе (Postgres и image-service доступны)
+      security: []
+      responses:
+        "200":
+          description: Готов
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+        "503":
+          description: Одна из зависимостей недоступна
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+
+  /api/v1/auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Регистрация
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name, surname, phone_number, password]
+              properties:
+                email: { type: string, format: email }
+                name: { type: string }
+                surname: { type: string }
+                phone_number: { type: string, pattern: '^\+[1-9][0-9]{7,14}$', example: "+79991234567" }
+                password: { type: string, minLength: 8 }
+      responses:
+        "201":
+          description: Пользователь создан, открыта сессия
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/RefreshCookie" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Вход
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Открыта новая сессия
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/RefreshCookie" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/auth/refresh:
+    post:
+      operationId: refreshTokens
+      tags: [auth]
+      summary: Обмен refresh-токена на новую пару токенов
+      description: |
+        Refresh-токен берётся из cookie `refresh_token`, а если её нет — из тела.
+        Токен одноразовый: повторное предъявление уже использованного токена
+        отзывает всю сессию.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: Новая пара токенов
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/RefreshCookie" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Token" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Refresh-токен неизвестен, истёк, уже использован или сессия отозвана; cookie удаляется
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Выход из текущей сессии
+      description: |
+        Сессия определяется по refresh-токену (cookie или тело), а без него —
+        по access-токену из заголовка. Если токен уже недействителен, ответ всё равно 204.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "204": { description: "Сессия отозвана, cookie удалена" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/auth/logout-all:
+    post:
+      operationId: logoutAll
+      tags: [auth]
+      summary: Выход со всех устройств
+      responses:
+        "204": { description: Все сессии пользователя отозваны }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      summary: Смена пароля
+      description: Остальные сессии пользователя отзываются, текущая остаётся.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [old_password, new_password]
+              properties:
+                old_password: { type: string }
+                new_password: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: Пароль изменён; новый access-токен текущей сессии (без refresh)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { $ref: "#/components/schemas/Token" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      summary: Сброс пароля
+      description: |
+        Назначает временный пароль и отзывает все сессии пользователя.
+        Для незарегистрированного email ответ тот же — 204, чтобы по ответу
+        нельзя было узнать, есть ли такой пользователь.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "204": { description: Запрос принят }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/auth/oauth/{provider}/start:
+    post:
+      operationId: startOAuth
+      tags: [auth]
+      summary: Начало входа через OAuth-провайдера
+      security: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, example: yandex }
+      responses:
+        "200":
+          description: Адрес страницы авторизации провайдера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auth_url: { type: string, format: uri }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/auth/oauth/callback:
+    post:
+      operationId: finishOAuth
+      tags: [auth]
+      summary: Завершение входа через OAuth-провайдера
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, state]
+              properties:
+                code: { type: string }
+                state: { type: string }
+      responses:
+        "200":
+          description: Открыта новая сессия
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/RefreshCookie" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/AuthResult"
+                  - type: object
+                    properties:
+                      email: { type: string, format: email }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/clients:
+    get:
+      operationId: listClients
+      tags: [clients]
+      summary: Список клиентов
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Клиенты в порядке регистрации
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Client" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createClient
+      tags: [clients]
+      summary: Создание клиента
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientInput" }
+      responses:
+        "201":
+          description: Клиент создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Client" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/clients/search:
+    get:
+      operationId: searchClients
+      tags: [clients]
+      summary: Поиск клиентов по имени и фамилии
+      parameters:
+        - { name: client_name, in: query, required: true, schema: { type: string } }
+        - { name: client_surname, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Найденные клиенты
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Client" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/clients/{clientId}:
+    delete:
+      operationId: deleteClient
+      tags: [clients]
+      summary: Удаление клиента (вместе с его адресом)
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      responses:
+        "204": { description: Удалён }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/clients/{clientId}/address:
+    patch:
+      operationId: updateClientAddress
+      tags: [clients]
+      summary: Изменение адреса клиента
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddressInput" }
+      responses:
+        "200":
+          description: Клиент с новым адресом
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Client" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/suppliers:
+    get:
+      operationId: listSuppliers
+      tags: [suppliers]
+      summary: Список поставщиков (по названию)
+      responses:
+        "200":
+          description: Поставщики
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Supplier" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createSupplier
+      tags: [suppliers]
+      summary: Создание поставщика
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SupplierInput" }
+      responses:
+        "201":
+          description: Поставщик создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Supplier" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/suppliers/{supplierId}:
+    get:
+      operationId: getSupplier
+      tags: [suppliers]
+      summary: Поставщик
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      responses:
+        "200":
+          description: Поставщик
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Supplier" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteSupplier
+      tags: [suppliers]
+      summary: Удаление поставщика (вместе с его адресом)
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      responses:
+        "204": { description: Удалён }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: У поставщика есть товары (SUPPLIER_IN_USE)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/suppliers/{supplierId}/address:
+    patch:
+      operationId: updateSupplierAddress
+      tags: [suppliers]
+      summary: Изменение адреса поставщика
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddressInput" }
+      responses:
+        "200":
+          description: Поставщик с новым адресом
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Supplier" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/products:
+    get:
+      operationId: listProducts
+      tags: [products]
+      summary: Товары в наличии (по названию)
+      description: Без limit и offset возвращается весь список.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Товары с остатком больше нуля
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createProduct
+      tags: [products]
+      summary: Создание товара
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductInput" }
+      responses:
+        "201":
+          description: Товар создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/products/{productId}:
+    get:
+      operationId: getProduct
+      tags: [products]
+      summary: Товар
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+      responses:
+        "200":
+          description: Товар
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteProduct
+      tags: [products]
+      summary: Удаление товара
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+      responses:
+        "204": { description: Удалён }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/products/{productId}/stock:
+    patch:
+      operationId: decreaseProductStock
+      tags: [products]
+      summary: Покупка — уменьшение остатка
+      description: Изменение рассылается подписчикам SSE.
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decrease_by]
+              properties:
+                decrease_by: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Товар с новым остатком
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400":
+          description: Ошибка валидации или недостаточно товара (INSUFFICIENT_STOCK)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/products/{productId}/image:
+    post:
+      operationId: uploadProductImage
+      tags: [images]
+      summary: Загрузка фото товара
+      description: Тип содержимого определяется по самим данным. У товара может быть только одно фото.
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+          image/*:
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: Фото сохранено
+          headers:
+            Location:
+              schema: { type: string, example: /api/v1/images/0b7f6c1e-... }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImageMetadata" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: У товара уже есть фото (IMAGE_ALREADY_EXISTS)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    get:
+      operationId: getProductImage
+      tags: [images]
+      summary: Фото товара
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+      responses:
+        "200": { $ref: "#/components/responses/ImageFile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/images/{imageId}:
+    get:
+      operationId: getImage
+      tags: [images]
+      summary: Фото по id
+      parameters:
+        - $ref: "#/components/parameters/ImageId"
+      responses:
+        "200": { $ref: "#/components/responses/ImageFile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    put:
+      operationId: replaceImage
+      tags: [images]
+      summary: Замена фото
+      parameters:
+        - $ref: "#/components/parameters/ImageId"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+          image/*:
+            schema: { type: string, format: binary }
+      responses:
+        "204": { description: Фото заменено }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteImage
+      tags: [images]
+      summary: Удаление фото
+      parameters:
+        - $ref: "#/components/parameters/ImageId"
+      responses:
+        "204": { description: Фото удалено }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/sse/products:
+    get:
+      operationId: streamProductUpdates
+      tags: [realtime]
+      summary: Поток изменений цены и остатка товаров (Server-Sent Events)
+      description: |
+        Каждое изменение приходит событием `product.updated`, в `data` — товар
+        в формате `Product`. Сервер шлёт комментарий-пинг каждые 15 с.
+        Браузерный EventSource не передаёт заголовки, поэтому токен можно
+        передать в query-параметре `access_token`.
+      security:
+        - bearerAuth: []
+        - accessTokenQuery: []
+      responses:
+        "200":
+          description: Поток событий
+          content:
+            text/event-stream:
+              schema: { type: string }
+              example: |
+                retry: 3000
+
+                event: product.updated
+                data: {"id":"5269aea7-...","name":"Чайник","price":2926.6,"available_stock":71,...}
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    accessTokenQuery:
+      type: apiKey
+      in: query
+      name: access_token
+
+  headers:
+    RefreshCookie:
+      description: "refresh_token=<token>; Path=/api/v1/auth; HttpOnly; SameSite=Strict"
+      schema: { type: string }
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 1000 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0 }
+    ClientId:
+      name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SupplierId:
+      name: supplierId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ImageId:
+      name: imageId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос (INVALID_REQUEST, VALIDATION_ERROR)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Нет действующего токена или неверные учётные данные
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Объект не найден
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Пользователь с таким email уже существует (USER_ALREADY_EXISTS)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Превышен лимит запросов (TOO_MANY_REQUESTS)
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    InternalError:
+      description: Внутренняя ошибка (INTERNAL_ERROR)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ImageFile:
+      description: Содержимое фото
+      content:
+        image/*:
+          schema: { type: string, format: binary }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: VALIDATION_ERROR }
+        message: { type: string }
+
+    Readiness:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        checks:
+          type: object
+          additionalProperties: { type: string }
+
+    Token:
+      type: object
+      required: [access_token, expires_at]
+      properties:
+        access_token: { type: string }
+        expires_at: { type: string, format: date-time }
+        refresh_token: { type: string, description: Нет в ответе смены пароля }
+        refresh_expires_at: { type: string, format: date-time }
+
+    AuthResult:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        token: { $ref: "#/components/schemas/Token" }
+
+    AddressInput:
+      type: object
+      required: [country, city, street]
+      properties:
+        country: { type: string }
+        city: { type: string }
+        street: { type: string }
+
+    Address:
+      allOf:
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+        - $ref: "#/components/schemas/AddressInput"
+
+    ClientInput:
+      type: object
+      required: [client_name, client_surname, birthday, gender, address]
+      properties:
+        client_name: { type: string }
+        client_surname: { type: string }
+        birthday: { type: string, format: date }
+        gender: { type: string, enum: [male, female] }
+        address: { $ref: "#/components/schemas/AddressInput" }
+
+    Client:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        client_name: { type: string }
+        client_surname: { type: string }
+        birthday: { type: string, format: date }
+        gender: { type: string, enum: [male, female] }
+        registration_date: { type: string, format: date-time }
+        address: { $ref: "#/components/schemas/Address" }
+
+    SupplierInput:
+      type: object
+      required: [name, phone_number, address]
+      properties:
+        name: { type: string }
+        phone_number: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
+        address: { $ref: "#/components/schemas/AddressInput" }
+
+    Supplier:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        phone_number: { type: string }
+        address: { $ref: "#/components/schemas/Address" }
+
+    ProductInput:
+      type: object
+      required: [name, category, price, available_stock, supplier_id]
+      properties:
+        name: { type: string }
+        category: { type: string }
+        price: { type: number, exclusiveMinimum: 0 }
+        available_stock: { type: integer, format: int64, minimum: 0 }
+        supplier_id: { type: string, format: uuid }
+
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        category: { type: string }
+        price: { type: number }
+        available_stock: { type: integer, format: int64 }
+        last_update_date: { type: string, format: date-time }
+        supplier_id: { type: string, format: uuid }
+        image_id: { type: [string, "null"], format: uuid }
+
+    ImageMetadata:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }

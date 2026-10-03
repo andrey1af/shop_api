@@ -1,0 +1,71 @@
+services:
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: "${AUTH_DB_NAME:?AUTH_DB_NAME обязателен}"
+      POSTGRES_USER: "${AUTH_DB_USER:?AUTH_DB_USER обязателен}"
+      POSTGRES_PASSWORD: "${AUTH_DB_PASSWORD:?AUTH_DB_PASSWORD обязателен}"
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  auth-migrate:
+    build:
+      context: ./backend
+      dockerfile: auth-service/Dockerfile
+      target: migrator
+    environment:
+      DB_HOST: auth-db
+      DB_PORT: "5432"
+      DB_NAME: "${AUTH_DB_NAME:?AUTH_DB_NAME обязателен}"
+      DB_USER: "${AUTH_DB_USER:?AUTH_DB_USER обязателен}"
+      DB_PASSWORD: "${AUTH_DB_PASSWORD:?AUTH_DB_PASSWORD обязателен}"
+      DB_SSL_MODE: "${AUTH_DB_SSL_MODE:-disable}"
+      DB_MIGRATIONS_DIR: /app/migrations
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    restart: "no"
+
+  auth:
+    build:
+      context: ./backend
+      dockerfile: auth-service/Dockerfile
+      target: runtime
+    environment:
+      ENV: "${ENV:-prod}"
+      GRPC_PORT: "${GRPC_PORT:-50051}"
+      GRPC_TIMEOUT: "${GRPC_TIMEOUT:-5s}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET обязателен}"
+      JWT_TOKEN_TTL: "${JWT_TOKEN_TTL:-15m}"
+      REFRESH_TOKEN_TTL: "${REFRESH_TOKEN_TTL:-720h}"
+      SESSION_CLEANUP_INTERVAL: "${SESSION_CLEANUP_INTERVAL:-1h}"
+      OAUTH_STATE_TTL: "${OAUTH_STATE_TTL:-10m}"
+      OAUTH_HTTP_TIMEOUT: "${OAUTH_HTTP_TIMEOUT:-10s}"
+      OAUTH_YANDEX_CLIENT_ID: "${OAUTH_YANDEX_CLIENT_ID:-}"
+      OAUTH_YANDEX_CLIENT_SECRET: "${OAUTH_YANDEX_CLIENT_SECRET:-}"
+      OAUTH_YANDEX_REDIRECT_URL: "${OAUTH_YANDEX_REDIRECT_URL:-}"
+      DB_HOST: auth-db
+      DB_PORT: "5432"
+      DB_NAME: "${AUTH_DB_NAME:?AUTH_DB_NAME обязателен}"
+      DB_USER: "${AUTH_DB_USER:?AUTH_DB_USER обязателен}"
+      DB_PASSWORD: "${AUTH_DB_PASSWORD:?AUTH_DB_PASSWORD обязателен}"
+      DB_SSL_MODE: "${AUTH_DB_SSL_MODE:-disable}"
+    depends_on:
+      auth-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "nc -w 1 127.0.0.1 $$GRPC_PORT < /dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: always
+
+volumes:
+  auth_postgres_data:

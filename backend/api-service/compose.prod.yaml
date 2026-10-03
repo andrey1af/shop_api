@@ -1,0 +1,78 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: "${DB_NAME:?DB_NAME обязателен}"
+      POSTGRES_USER: "${DB_USER:?DB_USER обязателен}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD обязателен}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: api-service/Dockerfile
+      target: migrator
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: "${DB_NAME:?DB_NAME обязателен}"
+      DB_USER: "${DB_USER:?DB_USER обязателен}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD обязателен}"
+      DB_SSL_MODE: "${DB_SSL_MODE:-disable}"
+      DB_MIGRATIONS_DIR: /app/migrations
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: api-service/Dockerfile
+      target: runtime
+    environment:
+      HTTP_PORT: "${HTTP_PORT:-8090}"
+      HTTP_READ_HEADER_TIMEOUT: "${HTTP_READ_HEADER_TIMEOUT:-5s}"
+      HTTP_SHUTDOWN_TIMEOUT: "${HTTP_SHUTDOWN_TIMEOUT:-10s}"
+      HTTP_HEALTH_TIMEOUT: "${HTTP_HEALTH_TIMEOUT:-2s}"
+      HTTP_AUTH_RATE_LIMIT_PER_MINUTE: "${HTTP_AUTH_RATE_LIMIT_PER_MINUTE:-10}"
+      HTTP_AUTH_RATE_LIMIT_BURST: "${HTTP_AUTH_RATE_LIMIT_BURST:-5}"
+      # Прод работает по HTTPS: cookie с refresh-токеном только с флагом Secure.
+      HTTP_REFRESH_COOKIE_SECURE: "${HTTP_REFRESH_COOKIE_SECURE:-true}"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: "${DB_NAME:?DB_NAME обязателен}"
+      DB_USER: "${DB_USER:?DB_USER обязателен}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD обязателен}"
+      DB_SSL_MODE: "${DB_SSL_MODE:-disable}"
+      AUTH_GRPC_ADDR: "auth:${GRPC_PORT:-50051}"
+      AUTH_GRPC_TIMEOUT: "${AUTH_GRPC_TIMEOUT:-5s}"
+      IMAGE_GRPC_ADDR: "image:${IMAGE_GRPC_PORT:-50052}"
+      IMAGE_GRPC_TIMEOUT: "${IMAGE_GRPC_TIMEOUT:-5s}"
+      IMAGE_GRPC_MAX_MESSAGE_BYTES: "${IMAGE_GRPC_MAX_MESSAGE_BYTES:-26214400}"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      image:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8090:${HTTP_PORT:-8090}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:$$HTTP_PORT/health/live"]
+      interval: 10s
+      timeout: ${HTTP_HEALTH_TIMEOUT:-2s}
+      retries: 3
+      start_period: 5s
+    restart: always
+
+volumes:
+  postgres_data:

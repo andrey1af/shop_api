@@ -1,0 +1,26 @@
+services:
+  generator:
+    build:
+      context: ./backend
+      dockerfile: generator-service/Dockerfile
+      target: runtime
+    environment:
+      ENV: "${ENV:-local}"
+      GENERATOR_INTERVAL: "${GENERATOR_INTERVAL:-2s}"
+      GENERATOR_PRODUCTS_REFRESH_INTERVAL: "${GENERATOR_PRODUCTS_REFRESH_INTERVAL:-30s}"
+      GENERATOR_PRICE_DELTA_PERCENT: "${GENERATOR_PRICE_DELTA_PERCENT:-20}"
+      GENERATOR_STOCK_MAX: "${GENERATOR_STOCK_MAX:-100}"
+      GENERATOR_API_BASE_URL: "http://api:${HTTP_PORT:-8090}"
+      GENERATOR_API_TIMEOUT: "${GENERATOR_API_TIMEOUT:-5s}"
+      GENERATOR_EMAIL: "${GENERATOR_EMAIL:-generator@shop.local}"
+      GENERATOR_PASSWORD: "${GENERATOR_PASSWORD:-generator}"
+      GENERATOR_PHONE_NUMBER: "${GENERATOR_PHONE_NUMBER:-+70000000000}"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_PRODUCT_UPDATES_TOPIC: "${KAFKA_PRODUCT_UPDATES_TOPIC:-product.updates}"
+      KAFKA_WRITE_TIMEOUT: "${KAFKA_WRITE_TIMEOUT:-5s}"
+    depends_on:
+      api:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped

@@ -1,0 +1,64 @@
+@startuml db-api-service
+title api-service — база shop_api
+
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #5B4BE8
+  HeaderBackgroundColor #F3F1FF
+}
+hide circle
+hide methods
+
+entity "addresses" as addresses {
+  * id : uuid <<PK>>
+  --
+  * country : varchar(100)
+  * city : varchar(100)
+  * street : varchar(255)
+}
+
+entity "clients" as clients {
+  * id : uuid <<PK>>
+  --
+  * client_name : varchar(100)
+  * client_surname : varchar(100)
+  * birthday : date
+  * gender : text (male | female)
+  * registration_date : timestamptz
+  * address_id : uuid <<FK>> <<UK>>
+}
+
+entity "suppliers" as suppliers {
+  * id : uuid <<PK>>
+  --
+  * name : varchar(255)
+  * phone_number : varchar(20)
+  * address_id : uuid <<FK>> <<UK>>
+}
+
+entity "products" as products {
+  * id : uuid <<PK>>
+  --
+  * name : varchar(255)
+  * category : varchar(100)
+  * price : numeric(12,2) CHECK > 0
+  * available_stock : bigint CHECK >= 0
+  * last_update_date : timestamptz
+  * supplier_id : uuid <<FK>>
+  image_id : uuid <<UK>>
+}
+
+note right of products
+  Индексы: supplier_id;
+  available_stock WHERE available_stock > 0.
+  image_id — id фото в image-service
+  (без FK: фото в другой базе).
+end note
+
+clients ||--|| addresses
+suppliers ||--|| addresses
+suppliers ||--o{ products
+@enduml

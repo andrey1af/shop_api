@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package auth.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/andrey1af/shop-api/backend/gen/authv1;authv1";
+
+service AuthService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  rpc Login(LoginRequest) returns (LoginResponse);
+
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse);
+
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
+
+  // Проверяет подпись и срок access-токена, а также что его сессия
+  // не отозвана и не истекла.
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+
+  // Обменивает refresh-токен на новую пару токенов той же сессии.
+  // Refresh-токен одноразовый: повторное предъявление уже использованного
+  // токена считается кражей и отзывает всю сессию.
+  rpc Refresh(RefreshRequest) returns (RefreshResponse);
+
+  // Отзывает текущую сессию (выход). Сессия определяется по refresh-токену,
+  // а если его нет — по access-токену.
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+
+  // Отзывает все сессии пользователя (выход со всех устройств).
+  rpc LogoutAll(LogoutAllRequest) returns (LogoutAllResponse);
+
+  // Начинает вход через внешнего OAuth-провайдера: возвращает адрес
+  // страницы авторизации провайдера, куда нужно отправить пользователя.
+  rpc OAuthStart(OAuthStartRequest) returns (OAuthStartResponse);
+
+  // Завершает вход через OAuth-провайдера: обменивает код авторизации
+  // на профиль пользователя и выдаёт access-токен сервиса.
+  rpc OAuthCallback(OAuthCallbackRequest) returns (OAuthCallbackResponse);
+}
+
+message Token {
+  string access_token = 1;
+  // Дубль exp из полезной нагрузки
+  google.protobuf.Timestamp expires_at = 2;
+  // Пусто, если операция не выдаёт новый refresh-токен (ChangePassword).
+  string refresh_token = 3;
+  google.protobuf.Timestamp refresh_expires_at = 4;
+}
+
+message RegisterRequest {
+  string email = 1; // логин пользователя, уникален в пределах сервиса
+  string name = 2;
+  string surname = 3;
+  string phone_number = 4; // формат E.164, например +79991234567
+  string password = 5;
+}
+
+message RegisterResponse {
+  string user_id = 1; // UUID созданной учётной записи
+  Token token = 2;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string user_id = 1;
+  Token token = 2;
+}
+
+message ChangePasswordRequest {
+  string access_token = 1;
+  string old_password = 2;
+  string new_password = 3;
+}
+
+message ChangePasswordResponse {
+  Token token = 1;
+}
+
+message ResetPasswordRequest {
+  string email = 1;
+}
+
+message ResetPasswordResponse {}
+
+message ValidateTokenRequest {
+  string access_token = 1;
+}
+
+message ValidateTokenResponse {
+  string user_id = 1;
+  string email = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  string session_id = 4;
+}
+
+message RefreshRequest {
+  string refresh_token = 1;
+}
+
+message RefreshResponse {
+  Token token = 1;
+}
+
+message LogoutRequest {
+  // Достаточно одного из токенов; если переданы оба, используется refresh.
+  string refresh_token = 1;
+  string access_token = 2;
+}
+
+message LogoutResponse {}
+
+message LogoutAllRequest {
+  string access_token = 1;
+}
+
+message LogoutAllResponse {}
+
+message OAuthStartRequest {
+  string provider = 1; // идентификатор провайдера, например yandex
+}
+
+message OAuthStartResponse {
+  string auth_url = 1;
+}
+
+message OAuthCallbackRequest {
+  // Провайдер не передаётся: он определяется по state, выданному в OAuthStart.
+  string code = 1;
+  string state = 2;
+}
+
+message OAuthCallbackResponse {
+  string user_id = 1;
+  string email = 2;
+  Token token = 3;
+}

@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package image.v1;
+
+option go_package = "github.com/andrey1af/shop-api/backend/gen/imagev1;imagev1";
+
+service ImageService {
+  rpc CreateImage(CreateImageRequest) returns (CreateImageResponse);
+
+  rpc GetImage(GetImageRequest) returns (GetImageResponse);
+
+  rpc ReplaceImage(ReplaceImageRequest) returns (ReplaceImageResponse);
+
+  rpc DeleteImage(DeleteImageRequest) returns (DeleteImageResponse);
+}
+
+message CreateImageRequest {
+  string id = 1;
+  bytes data = 2;
+  string content_type = 3;
+}
+
+message CreateImageResponse {}
+
+message GetImageRequest {
+  string id = 1;
+}
+
+message GetImageResponse {
+  string id = 1;
+  bytes data = 2;
+  string content_type = 3;
+}
+
+message ReplaceImageRequest {
+  string id = 1;
+  bytes data = 2;
+  string content_type = 3;
+}
+
+message ReplaceImageResponse {}
+
+message DeleteImageRequest {
+  string id = 1;
+}
+
+message DeleteImageResponse {}

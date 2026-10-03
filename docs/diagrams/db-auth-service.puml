@@ -1,0 +1,88 @@
+@startuml db-auth-service
+title auth-service — база shop_auth
+
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #5B4BE8
+  HeaderBackgroundColor #F3F1FF
+}
+hide circle
+hide methods
+
+entity "users" as users {
+  * id : uuid <<PK>>
+  --
+  * name : varchar(100)
+  * surname : varchar(100)
+  * email : varchar(255) <<UK>>
+  phone_number : varchar(20)
+  password_hash : bytea
+  * created_at : timestamptz
+}
+
+entity "user_identities" as identities {
+  * id : uuid <<PK>>
+  --
+  * user_id : uuid <<FK>>
+  * provider : varchar(32)
+  * provider_user_id : varchar(255)
+  * email : varchar(255)
+  * created_at : timestamptz
+}
+
+entity "oauth_states" as states {
+  * state : varchar(128) <<PK>>
+  --
+  * provider : varchar(32)
+  * code_verifier : varchar(128)
+  * expires_at : timestamptz
+}
+
+entity "sessions" as sessions {
+  * id : uuid <<PK>>
+  --
+  * user_id : uuid <<FK>>
+  * created_at : timestamptz
+  * expires_at : timestamptz
+  revoked_at : timestamptz
+}
+
+entity "refresh_tokens" as tokens {
+  * id : uuid <<PK>>
+  --
+  * session_id : uuid <<FK>>
+  * token_hash : bytea <<UK>>
+  * created_at : timestamptz
+  * expires_at : timestamptz
+  used_at : timestamptz
+}
+
+note right of identities
+  UNIQUE (provider, provider_user_id)
+  UNIQUE (user_id, provider)
+end note
+
+note right of sessions
+  id = claim sid в access-токене.
+  Активна: revoked_at IS NULL
+  и expires_at > now().
+end note
+
+note right of tokens
+  Хранится только SHA-256 токена.
+  Одноразовый: при обмене
+  выставляется used_at.
+end note
+
+note bottom of users
+  password_hash и phone_number
+  пустые у пользователей OAuth.
+end note
+
+users ||--o{ identities
+users ||--o{ sessions
+sessions ||--o{ tokens
+@enduml

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Витрина — каталог</title>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+<div class="page">
+
+<header class="site-header">
+  <div class="header-top">
+    <a href="/" class="brand"><img class="brand-logo" src="/assets/img/logo.png" alt="" width="32" height="32">SHOP</a>
+    <span class="header-tagline">Магазин бытовой техники</span>
+    <a href="/admin/products.html" class="chip-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"></path><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"></circle><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"></circle><circle cx="9" cy="18" r="2" fill="currentColor" stroke="none"></circle></svg>Админ-панель</a>
+  </div>
+  <div class="header-title-row">
+    <h1>Каталог</h1>
+    <p class="header-subtitle">Только товары, которые есть на складе</p>
+  </div>
+  <nav class="site-nav" id="category-nav" aria-label="Категории">
+    <button type="button" class="active" data-category="">Все</button>
+  </nav>
+</header>
+
+<main class="storefront-main">
+  <div class="catalog-toolbar">
+    <label class="search-box">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6272" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+      <input type="search" id="search-input" aria-label="Поиск по каталогу" placeholder="Найти товар по названию">
+    </label>
+    <div class="catalog-meta">
+      <span class="catalog-count" id="catalog-count">Загрузка…</span>
+      <label class="sort-label">Сортировка
+        <select class="bare" id="sort-select">
+          <option value="price-asc">Сначала дешевле</option>
+          <option value="price-desc">Сначала дороже</option>
+          <option value="name">По названию</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <section class="live-feed" id="live-feed" aria-label="Изменения товаров в реальном времени">
+    <div class="live-feed-head">
+      <h2>Изменения цен и остатков</h2>
+      <span class="live-status" data-status="connecting"><span class="live-dot"></span><span class="live-status-text">Подключение…</span></span>
+    </div>
+    <ol class="live-feed-list"></ol>
+    <p class="live-feed-empty">Здесь появятся изменения цен и остатков, как только они произойдут</p>
+  </section>
+
+  <div id="catalog-grid" class="catalog-grid"></div>
+</main>
+
+<footer class="site-footer">
+  <span class="brand">SHOP</span>
+  <span>Санкт-Петербург, Литейный проспект, 25 · +7 999 123-45-67</span>
+</footer>
+</div>
+
+<script src="/assets/js/util.js"></script>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/live.js"></script>
+<script src="/assets/js/live-feed.js"></script>
+<script src="/assets/js/modal.js"></script>
+<script src="/assets/js/auth.js"></script>
+<script src="/assets/js/catalog.js"></script>
+</body>
+</html>

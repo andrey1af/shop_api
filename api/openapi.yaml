@@ -1,0 +1,1446 @@
+openapi: 3.0.3
+info:
+  title: Shop API
+  version: 1.0.0
+  description: |
+    REST API магазина бытовой техники для управления клиентами, товарами,
+    поставщиками и изображениями. Все идентификаторы имеют формат UUID.
+
+    Все методы `/api/v1`, кроме регистрации, входа (в том числе через
+    OAuth-провайдера) и сброса пароля, требуют access-токен в заголовке
+    `Authorization: Bearer <token>`. Токен выдают методы
+    `POST /api/v1/auth/register`, `POST /api/v1/auth/login` и
+    `POST /api/v1/auth/oauth/callback`, а проверяет его сервис авторизации.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: http://localhost:{port}
+    description: Локальный сервер разработки
+    variables:
+      port:
+        default: '8080'
+        description: Порт HTTP-сервера приложения
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+    description: Служебные пробы состояния сервиса для оркестратора
+  - name: Auth
+    description: Регистрация, вход и управление паролем пользователя
+  - name: Clients
+    description: Управление клиентами магазина
+  - name: Products
+    description: Управление товарами и их остатками
+  - name: Suppliers
+    description: Управление поставщиками
+  - name: Images
+    description: Управление изображениями товаров
+
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Проверить, что сервис жив
+      description: |
+        Подтверждает, что процесс запущен и обрабатывает HTTP-запросы.
+
+        Внешние зависимости намеренно не проверяются: проба отвечает об одном
+        лишь состоянии самого приложения. Благодаря этому временная
+        недоступность базы данных или хранилища не приводит к перезапуску
+        контейнера — там, где перезапуск всё равно ничего бы не починил.
+        Именно эту пробу использует `healthcheck` сервиса в Docker Compose.
+
+        Отличается от `GET /health/ready`: та отвечает на вопрос «можно ли
+        слать в сервис трафик», а эта — «жив ли процесс вообще».
+      operationId: getLiveness
+      security: []
+      responses:
+        '200':
+          description: Сервис запущен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivenessStatus'
+              example:
+                status: ok
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Проверить, что сервис готов принимать трафик
+      description: |
+        Проверяет внешние зависимости, без которых сервис не может обслужить
+        запрос: соединение с PostgreSQL и доступность бакета в объектном
+        хранилище MinIO. Проверки выполняются параллельно и ограничены общим
+        таймаутом `HTTP_HEALTH_TIMEOUT` (по умолчанию 2 секунды), так что
+        зависший ответ зависимости не подвесит саму пробу.
+
+        Ответ `200` означает, что успешны все проверки. Если хотя бы одна из
+        них не прошла, возвращается `503` — балансировщику или оркестратору
+        следует убрать экземпляр из-под трафика, пока зависимость не
+        восстановится. Поле `checks` показывает, какая именно из них
+        недоступна.
+
+        Текст ошибки наружу не отдаётся, чтобы не раскрывать параметры
+        подключения к инфраструктуре; подробности остаются в логах сервиса.
+      operationId: getReadiness
+      security: []
+      responses:
+        '200':
+          description: Все зависимости доступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+              example:
+                status: ok
+                checks:
+                  database: ok
+                  storage: ok
+        '503':
+          description: Хотя бы одна зависимость недоступна
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+              example:
+                status: fail
+                checks:
+                  database: ok
+                  storage: fail
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Зарегистрировать пользователя
+      description: Создаёт учётную запись и сразу выдаёт access-токен.
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              email: ivan@example.com
+              name: Иван
+              surname: Иванов
+              phone_number: '+79991234567'
+              password: s3cret-pass
+      responses:
+        '201':
+          description: Пользователь зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Пользователь с таким email уже существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: USER_ALREADY_EXISTS
+                message: user already exists
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Войти по email и паролю
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: ivan@example.com
+              password: s3cret-pass
+      responses:
+        '200':
+          description: Вход выполнен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Неверный email или пароль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_CREDENTIALS
+                message: invalid email or password
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Сменить пароль
+      description: |
+        Меняет пароль пользователя, которому принадлежит access-токен, и
+        выдаёт новый токен.
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+            example:
+              old_password: s3cret-pass
+              new_password: n3w-s3cret-pass
+      responses:
+        '200':
+          description: Пароль изменён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangePasswordResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: |
+            Access-токен отсутствует или недействителен (`UNAUTHORIZED`) либо
+            старый пароль неверен (`INVALID_CREDENTIALS`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_CREDENTIALS
+                message: old password is incorrect
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Сбросить пароль
+      description: |
+        Назначает пользователю временный пароль. Ответ одинаков независимо
+        от того, существует ли учётная запись с таким email, чтобы по нему
+        нельзя было выяснить список пользователей.
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+            example:
+              email: ivan@example.com
+      responses:
+        '204':
+          description: Запрос на сброс пароля принят
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/oauth/{provider}/start:
+    post:
+      tags: [Auth]
+      summary: Начать вход через OAuth-провайдера
+      description: |
+        Возвращает адрес страницы авторизации провайдера. Фронтенд отправляет
+        туда пользователя; после входа провайдер вернёт его на настроенный
+        redirect URI с параметрами `code` и `state`, которые нужно передать в
+        `POST /api/v1/auth/oauth/callback`. Адрес действителен ограниченное
+        время (по умолчанию 10 минут).
+      operationId: oauthStart
+      security: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: Идентификатор провайдера
+          schema:
+            type: string
+            enum: [yandex]
+      responses:
+        '200':
+          description: Адрес страницы авторизации провайдера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthStartResponse'
+        '400':
+          description: Провайдер не поддерживается или не настроен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: unsupported oauth provider
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/oauth/callback:
+    post:
+      tags: [Auth]
+      summary: Завершить вход через OAuth-провайдера
+      description: |
+        Обменивает код авторизации на профиль пользователя у провайдера и
+        выдаёт access-токен. Провайдер определяется по `state`. Если
+        пользователя ещё нет, он создаётся без пароля; если есть пользователь
+        с тем же email, подтверждённым провайдером, учётная запись провайдера
+        привязывается к нему.
+      operationId: oauthCallback
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthCallbackRequest'
+            example:
+              code: '4723981'
+              state: Zq3H2l0x9vYc1P6nT8wKfR5aBdE7uJmS4gN0iLoXyWc
+      responses:
+        '200':
+          description: Вход выполнен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthLoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: |
+            `state` неизвестен или просрочен, код авторизации недействителен
+            либо провайдер не вернул email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: OAUTH_FAILED
+                message: oauth authorization failed
+        '409':
+          description: |
+            Пользователь с таким email уже существует, а провайдер не
+            подтвердил владение адресом
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: USER_ALREADY_EXISTS
+                message: user with this email already exists
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/clients:
+    get:
+      tags: [Clients]
+      summary: Получить список клиентов
+      description: |
+        Возвращает список клиентов с постраничной навигацией. Без `limit` и
+        `offset` возвращается весь список. Если клиенты не найдены,
+        возвращается пустой массив. Поиск по имени и фамилии — отдельный
+        метод, см. `GET /api/v1/clients/search`.
+      operationId: getClients
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Список клиентов, возможно пустой
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Client'
+              examples:
+                clients:
+                  value:
+                    - id: 8fd941ad-4a31-4d60-a379-cd4b13603a9a
+                      client_name: Иван
+                      client_surname: Иванов
+                      birthday: '1990-05-14'
+                      gender: male
+                      registration_date: '2026-09-14T09:30:00Z'
+                      address:
+                        id: a99b7805-e32b-45d5-8fb0-d238a483d32a
+                        country: Россия
+                        city: Москва
+                        street: Тверская, 10
+                empty:
+                  value: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [Clients]
+      summary: Добавить клиента
+      operationId: createClient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClientRequest'
+            example:
+              client_name: Иван
+              client_surname: Иванов
+              birthday: '1990-05-14'
+              gender: male
+              address:
+                country: Россия
+                city: Москва
+                street: Тверская, 10
+      responses:
+        '201':
+          description: Клиент создан
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/clients/search:
+    get:
+      tags: [Clients]
+      summary: Найти клиентов по имени и фамилии
+      description: |
+        Возвращает клиентов, у которых имя и фамилия точно совпадают с
+        переданными значениями. Оба параметра обязательны и используются
+        совместно. Если совпадений нет, возвращается пустой массив.
+      operationId: findClientsByNameAndSurname
+      parameters:
+        - name: client_name
+          in: query
+          required: true
+          description: Имя клиента для точного поиска
+          schema:
+            type: string
+            minLength: 1
+          example: Иван
+        - name: client_surname
+          in: query
+          required: true
+          description: Фамилия клиента для точного поиска
+          schema:
+            type: string
+            minLength: 1
+          example: Иванов
+      responses:
+        '200':
+          description: Список найденных клиентов, возможно пустой
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Client'
+              examples:
+                clients:
+                  value:
+                    - id: 8fd941ad-4a31-4d60-a379-cd4b13603a9a
+                      client_name: Иван
+                      client_surname: Иванов
+                      birthday: '1990-05-14'
+                      gender: male
+                      registration_date: '2026-09-14T09:30:00Z'
+                      address:
+                        id: a99b7805-e32b-45d5-8fb0-d238a483d32a
+                        country: Россия
+                        city: Москва
+                        street: Тверская, 10
+                empty:
+                  value: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/clients/{clientId}:
+    delete:
+      tags: [Clients]
+      summary: Удалить клиента
+      operationId: deleteClient
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      responses:
+        '204':
+          description: Клиент удалён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/clients/{clientId}/address:
+    patch:
+      tags: [Clients]
+      summary: Изменить адрес клиента
+      operationId: updateClientAddress
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressInput'
+            example:
+              country: Россия
+              city: Казань
+              street: Кремлёвская, 18
+      responses:
+        '200':
+          description: Адрес клиента изменён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/products:
+    get:
+      tags: [Products]
+      summary: Получить все доступные товары
+      description: Возвращает товары с `available_stock > 0` либо пустой массив.
+      operationId: getAvailableProducts
+      responses:
+        '200':
+          description: Список доступных товаров, возможно пустой
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+              example:
+                - id: 45fd8e62-2ce9-47d9-9616-fca5557bfb42
+                  name: Холодильник Frost 3000
+                  category: Крупная бытовая техника
+                  price: 74990.00
+                  available_stock: 12
+                  last_update_date: '2026-09-14T08:15:00Z'
+                  supplier_id: 554bdf33-c345-4ca2-bcf6-29be3a2129cc
+                  image_id: f67b8f8a-92d5-4de3-b991-b0fa45768bab
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [Products]
+      summary: Добавить товар
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+            example:
+              name: Холодильник Frost 3000
+              category: Крупная бытовая техника
+              price: 74990.00
+              available_stock: 12
+              supplier_id: 554bdf33-c345-4ca2-bcf6-29be3a2129cc
+      responses:
+        '201':
+          description: Товар создан
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Указанный поставщик не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SUPPLIER_NOT_FOUND
+                message: supplier not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/products/{productId}:
+    get:
+      tags: [Products]
+      summary: Получить товар по идентификатору
+      operationId: getProductById
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Товар найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags: [Products]
+      summary: Удалить товар
+      operationId: deleteProduct
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '204':
+          description: Товар удалён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/products/{productId}/stock:
+    patch:
+      tags: [Products]
+      summary: Уменьшить количество товара
+      operationId: decreaseProductStock
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecreaseStockRequest'
+            example:
+              decrease_by: 2
+      responses:
+        '200':
+          description: Остаток товара уменьшен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Ошибка валидации или недостаточно товара на складе
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                validation:
+                  value:
+                    code: VALIDATION_ERROR
+                    message: decrease_by must be greater than zero
+                insufficientStock:
+                  value:
+                    code: INSUFFICIENT_STOCK
+                    message: insufficient stock
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/suppliers:
+    get:
+      tags: [Suppliers]
+      summary: Получить всех поставщиков
+      description: Если поставщиков нет, возвращается пустой массив.
+      operationId: getSuppliers
+      responses:
+        '200':
+          description: Список поставщиков, возможно пустой
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Supplier'
+              example:
+                - id: 554bdf33-c345-4ca2-bcf6-29be3a2129cc
+                  name: ТехноСнаб
+                  address:
+                    id: 00db824c-fef9-450d-85be-d2537c4583c8
+                    country: Россия
+                    city: Санкт-Петербург
+                    street: Литейный проспект, 25
+                  phone_number: '+79991234567'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [Suppliers]
+      summary: Добавить поставщика
+      operationId: createSupplier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierRequest'
+            example:
+              name: ТехноСнаб
+              address:
+                country: Россия
+                city: Санкт-Петербург
+                street: Литейный проспект, 25
+              phone_number: '+79991234567'
+      responses:
+        '201':
+          description: Поставщик создан
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/suppliers/{supplierId}:
+    get:
+      tags: [Suppliers]
+      summary: Получить поставщика по идентификатору
+      operationId: getSupplierById
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+      responses:
+        '200':
+          description: Поставщик найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags: [Suppliers]
+      summary: Удалить поставщика
+      operationId: deleteSupplier
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+      responses:
+        '204':
+          description: Поставщик удалён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Поставщик связан с товарами и не может быть удалён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: SUPPLIER_IN_USE
+                message: supplier is used by products
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/suppliers/{supplierId}/address:
+    patch:
+      tags: [Suppliers]
+      summary: Изменить адрес поставщика
+      operationId: updateSupplierAddress
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressInput'
+            example:
+              country: Россия
+              city: Екатеринбург
+              street: улица Малышева, 51
+      responses:
+        '200':
+          description: Адрес поставщика изменён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/products/{productId}/image:
+    post:
+      tags: [Images]
+      summary: Добавить изображение товара
+      description: Загружает бинарное изображение и связывает его с товаром.
+      operationId: createProductImage
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '201':
+          description: Изображение добавлено
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageMetadata'
+              example:
+                id: f67b8f8a-92d5-4de3-b991-b0fa45768bab
+                product_id: 45fd8e62-2ce9-47d9-9616-fca5557bfb42
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Товар не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: PRODUCT_NOT_FOUND
+                message: product not found
+        '409':
+          description: У товара уже есть изображение
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: IMAGE_ALREADY_EXISTS
+                message: product already has an image
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      tags: [Images]
+      summary: Получить изображение товара
+      description: Возвращает изображение как загружаемый бинарный файл.
+      operationId: getImageByProductId
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Бинарное содержимое изображения
+          headers:
+            Content-Disposition:
+              $ref: '#/components/headers/ContentDisposition'
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/images/{imageId}:
+    get:
+      tags: [Images]
+      summary: Получить изображение по идентификатору
+      description: Возвращает изображение как загружаемый бинарный файл.
+      operationId: getImageById
+      parameters:
+        - $ref: '#/components/parameters/ImageId'
+      responses:
+        '200':
+          description: Бинарное содержимое изображения
+          headers:
+            Content-Disposition:
+              $ref: '#/components/headers/ContentDisposition'
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags: [Images]
+      summary: Заменить изображение
+      operationId: replaceImage
+      parameters:
+        - $ref: '#/components/parameters/ImageId'
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '204':
+          description: Изображение заменено
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags: [Images]
+      summary: Удалить изображение
+      operationId: deleteImage
+      parameters:
+        - $ref: '#/components/parameters/ImageId'
+      responses:
+        '204':
+          description: Изображение удалено
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access-токен из ответа регистрации или входа
+
+  parameters:
+    ClientId:
+      name: clientId
+      in: path
+      description: Идентификатор клиента
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: 8fd941ad-4a31-4d60-a379-cd4b13603a9a
+    ProductId:
+      name: productId
+      in: path
+      description: Идентификатор товара
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: 45fd8e62-2ce9-47d9-9616-fca5557bfb42
+    SupplierId:
+      name: supplierId
+      in: path
+      description: Идентификатор поставщика
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: 554bdf33-c345-4ca2-bcf6-29be3a2129cc
+    ImageId:
+      name: imageId
+      in: path
+      description: Идентификатор изображения
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: f67b8f8a-92d5-4de3-b991-b0fa45768bab
+    Limit:
+      name: limit
+      in: query
+      description: Максимальное число клиентов в ответе
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+      example: 20
+    Offset:
+      name: offset
+      in: query
+      description: Число пропускаемых клиентов
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      example: 0
+
+  headers:
+    Location:
+      description: URI созданного ресурса
+      schema:
+        type: string
+        format: uri-reference
+      example: /api/v1/resources/8fd941ad-4a31-4d60-a379-cd4b13603a9a
+    ContentDisposition:
+      description: Указывает браузеру скачать ответ как файл
+      schema:
+        type: string
+      example: 'attachment; filename="image.bin"'
+
+  responses:
+    Unauthorized:
+      description: Access-токен отсутствует или недействителен
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          example: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: missing or invalid access token
+    BadRequest:
+      description: Некорректный запрос или ошибка валидации
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VALIDATION_ERROR
+            message: validation error
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: NOT_FOUND
+            message: resource not found
+    InternalServerError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: internal server error
+
+  schemas:
+    HealthCheckStatus:
+      type: string
+      description: Результат одной проверки
+      enum: [ok, fail]
+      example: ok
+    LivenessStatus:
+      type: object
+      description: Состояние процесса сервиса
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/HealthCheckStatus'
+    ReadinessStatus:
+      type: object
+      description: Состояние сервиса вместе с его внешними зависимостями
+      required: [status, checks]
+      properties:
+        status:
+          allOf:
+            - $ref: '#/components/schemas/HealthCheckStatus'
+          description: |
+            Итоговый статус. Равен `ok`, только если успешны все проверки из
+            `checks`; если хотя бы одна из них не прошла — `fail`.
+        checks:
+          type: object
+          description: |
+            Результат по каждой зависимости в отдельности. Позволяет по
+            ответу понять, что именно недоступно, не заглядывая в логи.
+          required: [database, storage]
+          properties:
+            database:
+              allOf:
+                - $ref: '#/components/schemas/HealthCheckStatus'
+              description: Доступность PostgreSQL
+            storage:
+              allOf:
+                - $ref: '#/components/schemas/HealthCheckStatus'
+              description: Доступность объектного хранилища MinIO
+    AddressInput:
+      type: object
+      required: [country, city, street]
+      properties:
+        country:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Россия
+        city:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Москва
+        street:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: Тверская, 10
+    Address:
+      allOf:
+        - type: object
+          required: [id]
+          properties:
+            id:
+              type: string
+              format: uuid
+              readOnly: true
+              example: a99b7805-e32b-45d5-8fb0-d238a483d32a
+        - $ref: '#/components/schemas/AddressInput'
+    Gender:
+      type: string
+      description: Пол клиента
+      enum: [male, female, other]
+      example: male
+    CreateClientRequest:
+      type: object
+      required: [client_name, client_surname, birthday, gender, address]
+      properties:
+        client_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Иван
+        client_surname:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Иванов
+        birthday:
+          type: string
+          format: date
+          example: '1990-05-14'
+        gender:
+          $ref: '#/components/schemas/Gender'
+        address:
+          $ref: '#/components/schemas/AddressInput'
+    Client:
+      allOf:
+        - type: object
+          required: [id, registration_date]
+          properties:
+            id:
+              type: string
+              format: uuid
+              readOnly: true
+              example: 8fd941ad-4a31-4d60-a379-cd4b13603a9a
+            registration_date:
+              type: string
+              format: date-time
+              readOnly: true
+              example: '2026-09-14T09:30:00Z'
+            address:
+              $ref: '#/components/schemas/Address'
+        - $ref: '#/components/schemas/CreateClientRequest'
+    CreateProductRequest:
+      type: object
+      required: [name, category, price, available_stock, supplier_id]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: Холодильник Frost 3000
+        category:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Крупная бытовая техника
+        price:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+          example: 74990.00
+        available_stock:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 12
+        supplier_id:
+          type: string
+          format: uuid
+          example: 554bdf33-c345-4ca2-bcf6-29be3a2129cc
+    Product:
+      allOf:
+        - type: object
+          required: [id, last_update_date]
+          properties:
+            id:
+              type: string
+              format: uuid
+              readOnly: true
+              example: 45fd8e62-2ce9-47d9-9616-fca5557bfb42
+            last_update_date:
+              type: string
+              format: date-time
+              readOnly: true
+              example: '2026-09-14T08:15:00Z'
+            image_id:
+              type: string
+              format: uuid
+              nullable: true
+              readOnly: true
+              example: f67b8f8a-92d5-4de3-b991-b0fa45768bab
+        - $ref: '#/components/schemas/CreateProductRequest'
+    DecreaseStockRequest:
+      type: object
+      additionalProperties: false
+      required: [decrease_by]
+      properties:
+        decrease_by:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 2
+    CreateSupplierRequest:
+      type: object
+      required: [name, address, phone_number]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: ТехноСнаб
+        address:
+          $ref: '#/components/schemas/AddressInput'
+        phone_number:
+          type: string
+          description: Номер телефона в международном формате E.164
+          pattern: '^\+[1-9][0-9]{7,14}$'
+          example: '+79991234567'
+    Supplier:
+      allOf:
+        - type: object
+          required: [id]
+          properties:
+            id:
+              type: string
+              format: uuid
+              readOnly: true
+              example: 554bdf33-c345-4ca2-bcf6-29be3a2129cc
+            address:
+              $ref: '#/components/schemas/Address'
+        - $ref: '#/components/schemas/CreateSupplierRequest'
+    ImageMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, product_id]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+          example: f67b8f8a-92d5-4de3-b991-b0fa45768bab
+        product_id:
+          type: string
+          format: uuid
+          readOnly: true
+          example: 45fd8e62-2ce9-47d9-9616-fca5557bfb42
+    RegisterRequest:
+      type: object
+      required: [email, name, surname, phone_number, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: ivan@example.com
+        name:
+          type: string
+          minLength: 1
+          example: Иван
+        surname:
+          type: string
+          minLength: 1
+          example: Иванов
+        phone_number:
+          type: string
+          description: Номер телефона в международном формате E.164
+          pattern: '^\+[1-9][0-9]{7,14}$'
+          example: '+79991234567'
+        password:
+          type: string
+          format: password
+          minLength: 1
+          example: s3cret-pass
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: ivan@example.com
+        password:
+          type: string
+          format: password
+          minLength: 1
+          example: s3cret-pass
+    ChangePasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password:
+          type: string
+          format: password
+          minLength: 1
+          example: s3cret-pass
+        new_password:
+          type: string
+          format: password
+          minLength: 1
+          example: n3w-s3cret-pass
+    ResetPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: ivan@example.com
+    OAuthStartResponse:
+      type: object
+      required: [auth_url]
+      properties:
+        auth_url:
+          type: string
+          format: uri
+          description: Адрес страницы авторизации провайдера
+          example: https://oauth.yandex.ru/authorize?response_type=code&client_id=...&state=...
+    OAuthCallbackRequest:
+      type: object
+      required: [code, state]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          description: Код авторизации из redirect URI
+        state:
+          type: string
+          minLength: 1
+          description: Значение state из redirect URI
+    OAuthLoginResponse:
+      type: object
+      required: [user_id, email, token]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          example: 3b1c2f0e-6a7d-4f4e-9d61-2a3c8b9e5f10
+        email:
+          type: string
+          format: email
+          example: ivan@yandex.ru
+        token:
+          $ref: '#/components/schemas/Token'
+    Token:
+      type: object
+      required: [access_token, expires_at]
+      properties:
+        access_token:
+          type: string
+          description: 'JWT для заголовка `Authorization: Bearer <token>`'
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        expires_at:
+          type: string
+          format: date-time
+          example: '2026-09-14T10:30:00Z'
+    AuthResponse:
+      type: object
+      required: [user_id, token]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          example: 3b1c2f0e-6a7d-4f4e-9d61-2a3c8b9e5f10
+        token:
+          $ref: '#/components/schemas/Token'
+    ChangePasswordResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          $ref: '#/components/schemas/Token'
+    Error:
+      type: object
+      description: Код ошибки для обработки на фронтенде и человекочитаемое сообщение
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Машиночитаемый код ошибки
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: Человекочитаемое сообщение об ошибке
+          example: validation error

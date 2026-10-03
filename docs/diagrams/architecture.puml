@@ -1,0 +1,54 @@
+@startuml architecture
+title Shop API — архитектура
+
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam componentStyle rectangle
+skinparam ArrowColor #555555
+skinparam nodesep 60
+skinparam ranksep 70
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #5B4BE8
+}
+skinparam database {
+  BackgroundColor #F6F7FA
+  BorderColor #3B4150
+}
+skinparam queue {
+  BackgroundColor #FDF1DC
+  BorderColor #8A5500
+}
+
+actor "Покупатель /\nадминистратор" as user
+
+rectangle "web (nginx)\nстатика витрины и админ-панели,\nлента изменений по SSE,\nSwagger UI, прокси /api/v1" as web
+
+rectangle "generator-service\nизменение цен\nи остатков" as generator
+queue "Kafka\nproduct.updates" as kafka
+rectangle "api-service\nREST API, SSE,\nconsumer Kafka" as api
+rectangle "auth-service\nучётные записи,\nсессии, JWT" as auth
+rectangle "image-service\nфото товаров,\nшардирование по id" as imagesvc
+
+database "Postgres\nshop_api" as db
+database "Postgres: 4 шарда\nshop_images_1..4" as imagedb
+database "Redis\nкэш фото" as redis
+database "Postgres\nshop_auth" as authdb
+cloud "Яндекс OAuth" as yandex
+
+user --> web : HTTP :3000
+web --> api : /api/v1/*,\nSSE
+
+generator --> kafka : событие,\nключ = product_id
+kafka --> api : consumer group
+generator ..> api : REST: вход,\nсписок товаров
+
+api -right-> auth : gRPC
+auth --> authdb : SQL
+auth -right-> yandex : OAuth 2.0 + PKCE
+
+api --> db : SQL
+api --> imagesvc : gRPC
+imagesvc --> imagedb : SQL,\nшард по 1-му символу id
+api --> redis : cache-aside
+@enduml

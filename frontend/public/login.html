@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход — SHOP</title>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+<div class="page">
+
+<header class="site-header">
+  <div class="header-top">
+    <span class="brand"><img class="brand-logo" src="/assets/img/logo.png" alt="" width="32" height="32">SHOP</span>
+    <span class="header-tagline">Магазин бытовой техники</span>
+    <span></span>
+  </div>
+</header>
+
+<main class="auth-main">
+  <section class="form-section auth-card">
+    <nav class="auth-tabs" aria-label="Вход или регистрация">
+      <button type="button" class="active" data-tab="login">Вход</button>
+      <button type="button" data-tab="register">Регистрация</button>
+    </nav>
+
+    <form id="login-form" novalidate>
+      <label class="field">Email
+        <input type="email" name="email" autocomplete="username" required>
+      </label>
+      <label class="field">Пароль
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <p class="msg msg-error" data-role="error" hidden></p>
+      <button type="submit" class="btn btn-primary">Войти</button>
+      <button type="button" class="auth-link" data-tab="reset">Забыли пароль?</button>
+    </form>
+
+    <form id="register-form" novalidate hidden>
+      <label class="field">Email
+        <input type="email" name="email" autocomplete="username" required>
+      </label>
+      <div class="field-row">
+        <label class="field">Имя
+          <input type="text" name="name" autocomplete="given-name" required>
+        </label>
+        <label class="field">Фамилия
+          <input type="text" name="surname" autocomplete="family-name" required>
+        </label>
+      </div>
+      <label class="field">Телефон
+        <input type="tel" name="phone_number" autocomplete="tel" placeholder="+79991234567" required>
+        <span class="field-hint">В международном формате, например +79991234567</span>
+      </label>
+      <label class="field">Пароль
+        <input type="password" name="password" autocomplete="new-password" required>
+      </label>
+      <p class="msg msg-error" data-role="error" hidden></p>
+      <button type="submit" class="btn btn-primary">Зарегистрироваться</button>
+    </form>
+
+    <form id="reset-form" novalidate hidden>
+      <p class="field-hint" style="margin:0;">Укажите email учётной записи — ей будет назначен временный пароль.</p>
+      <label class="field">Email
+        <input type="email" name="email" autocomplete="username" required>
+      </label>
+      <p class="msg msg-error" data-role="error" hidden></p>
+      <p class="msg msg-ok" data-role="ok" hidden></p>
+      <button type="submit" class="btn btn-primary">Сбросить пароль</button>
+      <button type="button" class="auth-link" data-tab="login">Вернуться ко входу</button>
+    </form>
+
+    <div class="auth-oauth" id="oauth-block">
+      <div class="auth-divider"><span>или</span></div>
+      <button type="button" class="btn btn-yandex" data-oauth-provider="yandex">
+        <svg class="btn-yandex-logo" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="12" fill="#FC3F1D"/>
+          <path fill="#FFFFFF" d="M13.32 7.666h-.924c-1.694 0-2.585.858-2.585 2.123 0 1.43.616 2.1 1.881 2.959l1.045.704-3.003 4.487H7.49l2.695-4.014c-1.55-1.111-2.42-2.19-2.42-4.015 0-2.288 1.595-3.85 4.62-3.85h3.003v11.868H13.32V7.666z"/>
+        </svg>
+        Войти с Яндекс ID
+      </button>
+      <p class="msg msg-error" data-role="error" hidden></p>
+    </div>
+  </section>
+</main>
+</div>
+
+<script src="/assets/js/util.js"></script>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/login.js"></script>
+</body>
+</html>

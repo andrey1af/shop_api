@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Витрина — карточка товара</title>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+<div class="page">
+
+<header class="site-header">
+  <div class="header-top">
+    <a href="/" class="brand"><img class="brand-logo" src="/assets/img/logo.png" alt="" width="32" height="32">SHOP</a>
+    <span class="header-tagline">Магазин бытовой техники</span>
+    <a href="/admin/products.html" class="chip-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"></path><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"></circle><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"></circle><circle cx="9" cy="18" r="2" fill="currentColor" stroke="none"></circle></svg>Админ-панель</a>
+  </div>
+  <div class="header-title-row with-back">
+    <a href="/" class="back-link" aria-label="Назад в каталог"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H4M10 6l-6 6 6 6"></path></svg></a>
+    <h1 id="product-title">Загрузка…</h1>
+  </div>
+  <nav class="site-nav" aria-label="Разделы товара">
+    <a href="#about" class="active">О товаре</a>
+    <a href="#supplier">Поставщик</a>
+  </nav>
+</header>
+
+<main class="product-main" id="product-main" hidden>
+  <section id="about" class="panel-card" style="display:flex;flex-direction:column;gap:28px;">
+    <div id="product-image-wrap"><div class="ph product-photo">Фото товара</div></div>
+    <div>
+      <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;">Характеристики</h2>
+      <dl class="spec-list" id="product-specs"></dl>
+    </div>
+  </section>
+
+  <div style="display:flex;flex-direction:column;gap:24px;">
+    <section class="panel-card" style="display:flex;flex-direction:column;gap:22px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+        <div id="product-price" style="font-weight:800;font-size:36px;"></div>
+        <div id="product-stock-badge"></div>
+      </div>
+      <div style="display:flex;gap:12px;">
+        <div class="qty-stepper">
+          <button type="button" id="qty-minus" aria-label="Уменьшить количество"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1B1F2B" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"></path></svg></button>
+          <input type="number" id="qty-input" aria-label="Количество" value="1" min="1">
+          <button type="button" id="qty-plus" aria-label="Увеличить количество"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1B1F2B" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M12 5v14"></path></svg></button>
+        </div>
+        <button type="button" id="buy-btn" class="btn btn-primary" style="flex-grow:1;height:56px;font-size:17px;">Купить</button>
+      </div>
+      <p id="buy-message" class="msg" hidden></p>
+    </section>
+
+    <section id="supplier" class="supplier-card">
+      <h2 style="margin:0;font-size:20px;font-weight:700;">Поставщик</h2>
+      <div id="supplier-info" style="display:flex;flex-direction:column;gap:6px;">
+        <div class="field-hint">Загрузка…</div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div id="product-error" class="empty-state product-error" hidden></div>
+</div>
+
+<script src="/assets/js/util.js"></script>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/live.js"></script>
+<script src="/assets/js/modal.js"></script>
+<script src="/assets/js/auth.js"></script>
+<script src="/assets/js/product.js"></script>
+</body>
+</html>

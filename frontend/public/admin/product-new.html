@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Админ-панель — новый товар</title>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+<div class="page" style="min-height:100vh;">
+<header class="admin-header">
+  <div class="admin-header-top">
+    <div class="admin-brand"><span class="brand"><img class="brand-logo" src="/assets/img/logo.png" alt="" width="32" height="32">SHOP</span><span class="admin-brand-tag mono">admin</span></div>
+    <nav class="admin-nav" aria-label="Разделы админ-панели">
+      <a href="/admin/products.html" class="active">Товары</a>
+      <a href="/admin/clients.html">Клиенты</a>
+      <a href="/admin/suppliers.html">Поставщики</a>
+    </nav>
+    <div class="admin-header-right">
+      <a href="/" class="chip-link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"></path></svg>Открыть витрину</a>
+    </div>
+  </div>
+  <div class="admin-title-row">
+    <a href="/admin/products.html" class="back-link" aria-label="Назад к товарам"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H4M10 6l-6 6 6 6"></path></svg></a>
+    <h1>Новый товар</h1>
+  </div>
+</header>
+
+<main class="admin-main">
+  <form id="new-product-form">
+    <div class="new-product-grid">
+      <section class="form-section">
+        <h2>Основное</h2>
+        <label class="field">Название
+          <input type="text" id="f-name" maxlength="255" required>
+          <span class="field-error" id="err-name" hidden></span>
+        </label>
+        <label class="field">Категория
+          <input type="text" id="f-category" list="category-options" maxlength="100" required>
+          <datalist id="category-options"></datalist>
+          <span class="field-hint">Начните вводить — подскажем категории существующих товаров</span>
+        </label>
+        <div class="field-row">
+          <label class="field">Цена, ₽
+            <input type="text" id="f-price" inputmode="decimal" value="0">
+            <span class="field-error" id="err-price" hidden></span>
+          </label>
+          <label class="field">Остаток на складе, шт
+            <input type="number" id="f-stock" min="0" value="0">
+            <span class="field-error" id="err-stock" hidden></span>
+          </label>
+        </div>
+        <label class="field">Поставщик
+          <select id="f-supplier" required></select>
+          <span class="field-error" id="err-supplier" hidden></span>
+        </label>
+      </section>
+
+      <section class="form-section">
+        <div>
+          <h2>Изображение</h2>
+          <p class="field-hint" style="margin-top:6px;">Одно на товар. Файл загрузится сразу после создания товара.</p>
+        </div>
+        <label class="dropzone" id="dropzone">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#5B6272" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 16v4h16v-4"></path></svg>
+          <span class="title">Перетащите файл сюда</span>
+          <span class="link">или выберите на компьютере</span>
+          <input type="file" id="f-image" accept="image/*">
+        </label>
+        <div class="file-preview" id="file-preview" hidden>
+          <img class="thumb" id="file-preview-img" style="width:44px;height:44px;border-radius:10px;object-fit:cover;" alt="">
+          <div class="name">
+            <span id="file-preview-name"></span>
+            <span id="file-preview-size"></span>
+          </div>
+          <button type="button" id="file-preview-remove" aria-label="Убрать файл"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B6272" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+        </div>
+      </section>
+    </div>
+
+    <p class="msg msg-error" id="form-error" hidden></p>
+
+    <div class="form-actions">
+      <a href="/admin/products.html" class="btn btn-plain">Отмена</a>
+      <button type="submit" class="btn btn-primary" id="submit-btn">Создать товар</button>
+    </div>
+  </form>
+</main>
+</div>
+
+<script src="/assets/js/util.js"></script>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/modal.js"></script>
+<script src="/assets/js/auth.js"></script>
+<script src="/assets/js/admin/product-new.js"></script>
+</body>
+</html>
